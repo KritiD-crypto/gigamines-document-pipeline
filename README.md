@@ -1,55 +1,130 @@
+
 # Giga Mines — Multi-Format Document Ingestion & Tabularization
 
-A local proof of concept for ingesting heterogeneous documents and normalizing extracted records into CSV/JSON, with validation, a manual-review queue, and error logs.
+A Python proof of concept for ingesting documents in multiple formats, extracting structured information, and normalizing records into CSV and JSON. The pipeline includes field validation, a manual-review queue, error logging, and source traceability.
 
-## Supported inputs
+## Features
 
-- CSV and Excel (`.csv`, `.xlsx`, `.xlsm`)
-- JSON records (`.json`)
-- Labelled text (`.txt`), e.g. `Material: Lithium`
-- Word documents (`.docx`) with labelled paragraphs and simple tables
-- Text-based PDFs (`.pdf`); scanned pages use OCR when Tesseract is available
-- Images (`.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`, `.bmp`) using Tesseract OCR
+- Multi-format document ingestion
+- Structured data extraction and field normalization
+- Canonical field mapping using recognized aliases
+- Validation of required fields and non-negative numeric quantities
+- Manual-review queue for incomplete or invalid records
+- Error handling so individual file failures do not stop the entire batch
+- CSV and JSON output generation
+- Source filename and extraction timestamp tracking
+- OCR support for images and scanned PDFs when Tesseract is installed
+- Automated unit tests for key parsing and validation behavior
+
+## Supported Input Formats
+
+| Format | Supported files |
+|---|---|
+| CSV | `.csv` |
+| Excel | `.xlsx`, `.xlsm` |
+| JSON | `.json` |
+| Text | `.txt` with labelled fields such as `Material: Lithium` |
+| Word | `.docx` with labelled paragraphs and simple tables |
+| PDF | `.pdf` with extractable text; scanned pages can use OCR |
+| Images | `.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`, `.bmp` |
+
+## Project Structure
+
+```text
+gigamines-document-pipeline/
+├── input_files/             # Sample documents and input files
+├── output/                  # Generated results
+├── src/
+│   └── main.py              # Main ingestion and processing pipeline
+├── tests/
+│   └── test_pipeline.py     # Unit tests
+├── .gitignore
+├── ARCHITECTURE.md          # System architecture and design
+├── README.md
+└── requirements.txt         # Python dependencies
+```
 
 ## Requirements
 
-- Python 3.11+ recommended
-- Tesseract OCR installed separately for scanned-image OCR
-- Windows PowerShell instructions below; the script also uses standard Python libraries cross-platform.
+- Python 3.11 or newer recommended
+- pip for installing Python dependencies
+- Tesseract OCR for scanned-image and scanned-PDF OCR
+- Windows PowerShell commands are provided below; the Python script uses standard cross-platform paths and libraries.
 
-## Setup (Windows PowerShell)
+### Installing Tesseract OCR
+
+OCR requires Tesseract to be installed separately.
+
+If Tesseract is installed at:
+
+```text
+C:\Program Files\Tesseract-OCR\tesseract.exe
+```
+
+the script detects that path automatically. Otherwise, add Tesseract to your system PATH or configure `pytesseract.pytesseract.tesseract_cmd` in the source code.
+
+## Setup — Windows PowerShell
+
+Open a terminal in the project root directory.
+
+### 1. Create a virtual environment
 
 ```powershell
 python -m venv .venv
+```
+
+### 2. Activate the virtual environment
+
+```powershell
 .\.venv\Scripts\Activate.ps1
+```
+
+If PowerShell blocks activation, you can run the commands below without activating the environment by using `.venv\Scripts\python.exe`.
+
+### 3. Install dependencies
+
+```powershell
 python -m pip install -r requirements.txt
 ```
 
-If Python is not recognized, use the full Python launcher (`py`) or fix the Python PATH. If Tesseract is installed at `C:\Program Files\Tesseract-OCR\tesseract.exe`, the script detects that path automatically. Otherwise add Tesseract to PATH or configure `pytesseract.pytesseract.tesseract_cmd`.
+If Python is not recognized, install Python and ensure it is available on PATH. You can also try the Python launcher:
 
-## Run
+```powershell
+py -m venv .venv
+```
 
-Put input documents in `input_files/`, then run:
+## Running the Pipeline
+
+1. Place the documents you want to process in the `input_files/` directory.
+2. Run the pipeline from the project root:
 
 ```powershell
 python src/main.py
 ```
 
-Generated files are written to `output/`:
+The pipeline discovers supported files, processes them independently, validates extracted records, and writes the generated results to `output/`.
 
-- `combined_data.csv` — normalized records from all files
-- `combined_data.json` — same records as JSON
-- `review_queue.csv` — records with missing/invalid required fields or extraction uncertainty
-- `errors.csv` — files that failed to process
-- `logs/pipeline.log` — processing log
+## Generated Outputs
 
-## Normalized schema
-
-| Field | Meaning |
+| Output file | Purpose |
 |---|---|
-| `material` | Material / mineral / element / commodity |
+| `output/combined_data.csv` | Normalized records from all successfully processed inputs |
+| `output/combined_data.json` | The normalized records in JSON format |
+| `output/review_queue.csv` | Records requiring manual review because of missing or invalid fields or extraction uncertainty |
+| `output/errors.csv` | Files that failed during processing, with error details |
+| `output/logs/pipeline.log` | Processing log |
+
+Generated outputs are created when the pipeline runs. The `output/` directory is included in the repository with a placeholder file; generated results are not committed by default.
+
+## Normalized Data Schema
+
+The pipeline uses a common schema to demonstrate normalization across different input formats.
+
+| Field | Description |
+|---|---|
+| `material` | Material, mineral, element, or commodity |
 | `quantity` | Non-negative numeric quantity |
-| `location` | Site / facility / city |
+| `location` | Site, facility, or city |
 | `source_file` | Original filename for traceability |
 | `source_type` | Format or extraction route |
 | `page` | PDF page or source row where applicable |
@@ -57,21 +132,67 @@ Generated files are written to `output/`:
 | `review_reasons` | Semicolon-separated validation or extraction flags |
 | `extracted_at_utc` | UTC extraction timestamp |
 
-The proof of concept uses a deliberately small common schema to demonstrate normalization. Real deployments should define schemas per document family and units for quantities rather than assuming all quantities are directly comparable.
+The proof of concept uses a deliberately small common schema. Real deployments should define document-specific schemas and units for quantities rather than assuming that all quantities are directly comparable.
 
-## Design and reliability notes
+## Validation and Error Handling
 
-1. File extension routing selects a parser; files are processed independently so one failure does not stop the batch.
-2. Tabular formats use pandas/openpyxl; Word uses python-docx; PDF text extraction uses PyMuPDF; image/scanned PDF OCR uses Tesseract via pytesseract.
-3. Recognized aliases are mapped to canonical field names.
-4. Required fields and non-negative numeric quantity are checked. Invalid/incomplete records are not silently discarded; they go to `review_queue.csv`.
-5. Each record preserves source filename and extraction timestamp.
-6. Exceptions are logged to `errors.csv` and `output/logs/pipeline.log`.
-7. OCR output and heuristic field extraction are not guaranteed to be correct. Production should retain confidence scores, use document-specific schemas, compare totals where applicable, and require human approval for low-confidence or high-impact fields.
+The pipeline demonstrates the following reliability measures:
+
+1. File extensions determine which parser is used.
+2. Files are processed independently, so one failure does not stop the entire batch.
+3. Recognized field aliases are mapped to canonical names.
+4. Required fields and non-negative numeric quantities are validated.
+5. Incomplete or invalid records are sent to `review_queue.csv` instead of being silently discarded.
+6. Extracted records retain source filenames and UTC timestamps.
+7. Processing failures are recorded in `errors.csv` and `output/logs/pipeline.log`.
+
+OCR and heuristic extraction can produce incorrect results. Extracted information should be reviewed before it is used for important operational decisions.
+
+## Running the Tests
+
+Run the unit tests from the project root:
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+The tests cover field aliases, valid labelled records, invalid quantities, and missing required fields.
+
+## Architecture
+
+The application follows a file-ingestion and normalization workflow:
+
+1. Discover supported input files.
+2. Route each file to the appropriate parser.
+3. Extract structured fields from the document.
+4. Normalize recognized field names.
+5. Validate the extracted records.
+6. Route invalid or uncertain records for manual review.
+7. Write normalized data, review records, and processing errors to the output directory.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the architecture proposal, component responsibilities, reliability considerations, and potential production improvements.
 
 ## Limitations
 
-- The demo schema is `material`, `quantity`, `location`; adapt it to the real documents.
-- Text PDFs and simple labelled lines are supported; arbitrary complex PDF tables/layouts may need table extraction or document-specific parsing.
-- OCR requires Tesseract to be installed separately.
-- This is a local proof of concept, not a production queue/service. A production architecture can add object storage, a durable queue, worker pool, retries with backoff, idempotency keys, database transactions, monitoring, access controls, and a review UI.
+- The demonstration schema is limited to `material`, `quantity`, and `location`.
+- Complex PDF tables and arbitrary document layouts may require specialized extraction techniques.
+- OCR requires a separate Tesseract installation.
+- OCR and heuristic field extraction are not guaranteed to be correct.
+- The current implementation is a local proof of concept, not a production queue or hosted service.
+
+## Future Improvements
+
+A production implementation could introduce:
+
+- Object storage for uploaded documents
+- A durable message queue and worker pool
+- Retry handling with backoff and idempotency keys
+- Database transactions and persistent record storage
+- Document-specific schemas and extraction confidence scores
+- Monitoring, access controls, and audit trails
+- A human-review interface for low-confidence or high-impact fields
+- Additional automated integration tests
+
+## Assignment Context
+
+This project was developed as the document-ingestion and tabularization proof of concept for the Giga Mines internship assignment. It demonstrates multi-format ingestion, structured extraction, validation, normalization, error handling, and an architecture for future production development.
